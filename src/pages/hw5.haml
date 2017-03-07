@@ -1,0 +1,329 @@
+!!! 5
+%html
+	%head
+		%meta(charset='utf-8')
+		%title='Numerical Analysis Homework5'
+		%script(src='../res/libraries/math.min.js')
+		%script(src='../res/libraries/numeric.min.js')
+		%script(src='../res/libraries/three.r70.min.js')
+		%script(src='../res/libraries/OrbitControls.js')
+		%script(src='../res/libraries/KeyboardState.js')
+		:css
+			h1 {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				color: yellow;
+				text-align: center;
+			}
+			body {
+				margin: 0;
+				overflow: hidden;
+			}
+	%body
+		%h1
+			NA_HW5
+			%br
+			Press A/S/D
+		:javascript
+			var camera, scene, renderer, light, controls, keyboard;
+			var arm1, arm2, arm3, bound;
+			var angle = 0, isAnimate = false, delta = 0.05;
+			var obstacle, obsBound;
+
+			init();
+			animate();
+
+			function init() {
+
+				initScene();
+
+				arm1 = new THREE.Object3D();
+				scene.add(arm1);
+
+				var mesh = new THREE.Mesh(
+					new THREE.BoxGeometry(20, 5, 5),
+					new THREE.MeshLambertMaterial());
+				mesh.position.set(10, 2.5, 0);
+				arm1.add(mesh);
+
+				arm2 = arm1.clone();
+				arm2.position.set(20, 0, 0);
+				arm1.add(arm2);
+
+				arm3 = arm2.clone();
+				arm2.add(arm3);
+
+				obstacle = new THREE.Object3D();
+				scene.add(obstacle);
+
+				var obsMesh = new THREE.Mesh(
+					new THREE.BoxGeometry(20, 20, 20),
+					new THREE.MeshLambertMaterial({
+						'color': 'red'
+					}));
+				obsMesh.position.set(-20, 10, -20);
+				obsMesh.material.transparent = true;
+				obstacle.add(obsMesh);
+			}
+
+			function initScene() {
+
+				keyboard = new KeyboardState();
+				scene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
+				camera.position.y = 100;
+				scene.add(camera);
+
+				light = new THREE.PointLight(0xffffff);
+				light.position.set(100, 300, 200);
+				scene.add(light);
+
+				var gridXZ = new THREE.GridHelper(100, 10);
+				gridXZ.setColors(new THREE.Color(0xff0000), new THREE.Color(0xffffff));
+				scene.add(gridXZ);
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.setClearColor(0x888888);
+
+				controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+				document.body.appendChild(renderer.domElement);
+				window.addEventListener('resize', onWindowResize, false);
+			}
+
+			function animate() {
+
+				if (isAnimate) angle += delta;
+				arm1.rotation.y = angle;
+				arm2.rotation.y = angle;
+				arm3.rotation.y = angle;
+
+				if (bound) scene.remove(bound);
+				var vertices = [];
+				getVertices(arm1.children[0], vertices)
+				getVertices(arm2.children[0], vertices);
+				getVertices(arm3.children[0], vertices);
+				var OBB = findOBB(vertices);
+				bound = drawOBB(OBB);
+				scene.add(bound);
+
+				if (obsBound) scene.remove(obsBound);
+				var obsVertices = [];
+				getVertices(obstacle.children[0], obsVertices);
+				var obsOBB = findOBB(obsVertices);
+				obsBound = drawOBB(obsOBB);
+				scene.add(obsBound);
+
+				var isInter = isIntersection(OBB, obsOBB);
+				obstacle.children[0].material.opacity = isInter ? 0.5 : 1;
+
+				keyboard.update();
+				if (keyboard.down("S")) isAnimate = !isAnimate;
+				if (keyboard.pressed("A")) angle -= delta;
+				if (keyboard.pressed("D")) angle += delta;
+
+				controls.update();
+				requestAnimationFrame(animate);
+				render();
+			}
+
+			function render() {
+				renderer.render(scene, camera);
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function getVertices(theMesh, theVertices) {
+				var v = theVertices || [];
+				var vertices = theMesh.geometry.vertices;
+				for (var i = 0; i < vertices.length; i++)
+					v.push(theMesh.localToWorld(vertices[i].clone()));
+				return v;
+			}
+
+			function isIntersection(theOBB1, theOBB2) {
+				var axes1 = theOBB1.axes;
+				var axes2 = theOBB2.axes;
+				var axisVectors1 = [];
+				var axisVectors2 = [];
+				for (var i = 0; i < axes1.length; i++) {
+					var axisVector = getVector(axes1[i]);
+					if (!satTest(theOBB1, theOBB2, axisVector)) return false;
+					axisVectors1.push(axisVector);
+				}
+				for (var i = 0; i < axes2.length; i++) {
+					var axisVector = getVector(axes2[i]);
+					if (!satTest(theOBB1, theOBB2, axisVector)) return false;
+					axisVectors2.push(axisVector);
+				}
+				for (var i = 0; i < axes1.length; i++) {
+					for (var j = 0; j < axes2.length; j++) {
+						var axisVector1 = axisVectors1[i];
+						var axisVector2 = axisVectors2[j];
+						var axisVector = axisVector1.cross(axisVector2);
+						if (!satTest(theOBB1, theOBB2, axisVector)) return false;
+					}
+				}
+				return true;
+			}
+
+			function satTest(theOBB1, theOBB2, theAxisVector) {
+				var center1 = getProjLength(getVector(theOBB1.center), theAxisVector);
+				var center2 = getProjLength(getVector(theOBB2.center), theAxisVector);
+				var isLeftL = (center1 < center2);
+				var centerL = isLeftL ? center1 : center2;
+				var centerR = isLeftL ? center2 : center1;
+				var verticesL = isLeftL ? getOBBVertices(theOBB1) : getOBBVertices(theOBB2);
+				var verticesR = isLeftL ? getOBBVertices(theOBB2) : getOBBVertices(theOBB1);
+				var vertexLR = -Number.MAX_VALUE;
+				var vertexRL =  Number.MAX_VALUE;
+				for (var i = 0; i < verticesL.length; i++) {
+					var vertexL = getProjLength(verticesL[i], theAxisVector);
+					if (vertexL > vertexLR) vertexLR = vertexL;
+				}
+				for (var i = 0; i < verticesR.length; i++) {
+					var vertexR = getProjLength(verticesR[i], theAxisVector);
+					if (vertexR < vertexRL) vertexRL = vertexR;
+				}
+				var lengthL = vertexLR - centerL;
+				var lengthR = centerR - vertexRL;
+				var lengthC = centerR - centerL;
+				return (lengthL + lengthR >= lengthC);
+			}
+
+			function getProjLength(theVector, theAxisVector) {
+				var proj = theVector.projectOnVector(theAxisVector);
+				var projLengths = proj.divide(theAxisVector).toArray();
+				for (var i = 0; i < projLengths.length; i++) {
+					if (isFinite(projLengths[i])) return projLengths[i];
+				}
+				return 0;
+			}
+
+			function findOBB(theVectors) {
+				var getterX = function(v) { return v.x; };
+				var getterY = function(v) { return v.y; };
+				var getterZ = function(v) { return v.z; };
+				var meanPoint = getMeans(theVectors, getterX, getterY, getterZ);
+				var covMatrix = getCovMatrix(theVectors, getterX, getterY, getterZ);
+				var eigVectors = getEigVectors(covMatrix);
+				var finPoints = [];
+				for (var i = 0; i < theVectors.length; i++) {
+					var abjPoint = math.subtract(theVectors[i].toArray(), meanPoint);
+					finPoints.push(math.multiply(eigVectors, abjPoint));
+				}
+				finPoints = math.transpose(finPoints);
+				var min = math.min(finPoints, 1);
+				var max = math.max(finPoints, 1);
+				var eigVectorT = math.transpose(eigVectors);
+				var PC1 = eigVectors[0];
+				var PC2 = eigVectors[1];
+				if (PC1[0] === 1 && PC1[1] === 0 && PC1[2] === 0) PC2 = [0, 1, 0];
+				var PC3 = math.cross(PC1, PC2);
+				var mid = math.divide(math.add(max, min), 2);
+				var center = math.add(math.multiply(eigVectorT, mid), meanPoint);
+				var OBB = {
+					'center': center,
+					'size': math.divide(math.subtract(max, min), 2),
+					'axes': [PC1, PC2, PC3]
+				};
+				return OBB;
+			}
+
+			function getVector(thePoint) {
+				return new THREE.Vector3().fromArray(thePoint);
+			}
+
+			function getEigVectors(theCovMatrix) {
+				return numeric.eig(theCovMatrix).E.transpose().x;
+			}
+
+			function drawOBB(theOBB) {
+				var v = getOBBVertices(theOBB);
+				var geometry = new THREE.Geometry();
+				geometry.vertices.push(
+					v[0], v[1], v[3], v[1],
+					v[5], v[7], v[5], v[4],
+					v[6], v[4], v[0], v[2],
+					v[3], v[7], v[6], v[2]
+				);
+				var material = new THREE.LineBasicMaterial({ 'color': 'blue' });
+				return new THREE.Line(geometry, material);
+			}
+
+			function getOBBVertices(theOBB) {
+				var v = [];
+				for (var i = -1; i <= 1; i += 2) {
+					for (var j = -1; j <= 1; j += 2) {
+						for (var k = -1; k <= 1; k += 2) {
+							var p = theOBB.center.slice(0);
+							p = math.add(p, math.multiply(math.multiply(theOBB.axes[0], theOBB.size[0]), i));
+							p = math.add(p, math.multiply(math.multiply(theOBB.axes[1], theOBB.size[1]), j));
+							p = math.add(p, math.multiply(math.multiply(theOBB.axes[2], theOBB.size[2]), k));
+							v.push(getVector(p));
+						}
+					}
+				}
+				return v;
+			}
+
+			function getMean(theValues, theGetter) {
+				var sum = 0;
+				var count = theValues.length;
+				for (var i = 0; i < count; i++) {
+					var value = theValues[i];
+					if (theGetter) value = theGetter(value);
+					sum += value;
+				}
+				return sum / count;
+			}
+
+			function getMeans(theValues) {
+				var means = [];
+				for (var i = 1; i < arguments.length; i++) {
+					means.push(getMean(theValues, arguments[i]));
+				}
+				return means;
+			}
+
+			function getCov(theValues, theGetter1, theGetter2) {
+				var getter1 = theGetter1 || function(a) { return a; };
+				var getter2 = theGetter2 || function(a) { return a; };
+				var mean1 = getMean(theValues, theGetter1);
+				var mean2 = getMean(theValues, theGetter2);
+				var sum = 0;
+				var count = theValues.length;
+				for (var i = 0; i < count; i++) {
+					var values = theValues[i];
+					var value1 = getter1(values);
+					var value2 = getter2(values);
+					sum += (value1 - mean1) * (value2 - mean2);
+				}
+				return sum / (count - 1);
+			}
+
+			function getCovMatrix(theValues) {
+				var dim = arguments.length - 1;
+				var matrix = [];
+				for (var i = 0; i < dim; i++) {
+					var row = [];
+					var getter1 = arguments[i + 1];
+					for (var j = 0; j < dim; j++) {
+						var getter2 = arguments[j + 1];
+						var cov = getCov(theValues, getter1, getter2);
+						row.push(cov);
+					}
+					matrix.push(row);
+				}
+				return matrix;
+			}
+
+			window.focus();
