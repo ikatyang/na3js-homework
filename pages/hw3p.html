@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <title>Numerical Analysis Homework3p</title>
+    <script src='../res/libraries/three.r70.min.js'></script>
+    <style>
+      #info {
+      	position: absolute;
+      	top: 0px;
+      	width: 100%;
+      	padding: 10px;
+      	text-align: center;
+      	color: #ffff00
+      }
+      body {
+      	margin: 0;
+      	overflow: hidden;
+      }
+      #btn {
+      	position: absolute;
+      	bottom: 0;
+      	padding: 10px;
+      	width: 100%;
+      	text-align: center;
+      }
+      #rlt {
+      	position: absolute;
+      	float: left;
+      	padding: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id='info'>NA_HW3p</div>
+    <span id='rlt'>#Timer</span>
+    <div id='btn'>
+      <a href='javascript:hcTester(0);' id='b'>Bisection</a>
+      <a href='javascript:hcTester(1);' id='n'>Newton</a>
+      <a href='javascript:toggle(0);'>Rotate</a>
+    </div>
+    <script>
+      var camera, scene, renderer;
+      var mouse = new THREE.Vector2();
+      var cameraLeft = -50,
+      		cameraRight = 50,
+      		cameraTop = 50,
+      		cameraBottom = -50,
+      		cameraNear = -10,
+      		cameraFar = 10;
+      
+      var r = 30;
+      var rLo = 25;
+      var rHi = 35;
+      var maxIter = 20;
+      var eps = 1e-5;
+      var pts = [];
+      var curve;
+      var isAnimated = false;
+      var cleanGroup = [];
+      var useMode = 0;
+      
+      init();
+      animate();
+      
+      function init() {
+      		scene = new THREE.Scene();
+      
+      		camera = new THREE.OrthographicCamera(cameraLeft, cameraRight, cameraTop, cameraBottom, cameraNear, cameraFar);
+      		camera.position.z = 10;
+      		scene.add(camera);
+      
+      		// draw border
+      		var material = new THREE.LineBasicMaterial({
+      				color: 0x0000ff
+      		});
+      
+      		var geometry = new THREE.Geometry();
+      		geometry.vertices.push(
+      				new THREE.Vector3(-40, -40, 0),
+      				new THREE.Vector3(40, -40, 0),
+      				new THREE.Vector3(40, 40, 0),
+      				new THREE.Vector3(-40, 40, 0),
+      				new THREE.Vector3(-40, -40, 0)
+      		);
+      
+      		var border = new THREE.Line(geometry, material);
+      		scene.add(border);
+      
+      		var material = new THREE.LineBasicMaterial({
+      				color: 0xffffff // yellow
+      		});
+      		var geometry1 = new THREE.Geometry();
+      		var geometry2 = new THREE.Geometry();
+      		var pt = new THREE.Vector3();
+      		for (var i = 0; i <= 360; i++) {
+      				var x1 = rLo * Math.cos(i / 180 * Math.PI);
+      				var y1 = rLo * Math.sin(i / 180 * Math.PI);
+      
+      				pt.set(x1, y1, 0);
+      				geometry1.vertices.push(pt.clone());
+      
+      				var x2 = rHi * Math.cos(i / 180 * Math.PI);
+      				var y2 = rHi * Math.sin(i / 180 * Math.PI);
+      
+      				pt.set(x2, y2, 0);
+      				geometry2.vertices.push(pt.clone());
+      		}
+      		scene.add(new THREE.Line(geometry1, material));
+      		scene.add(new THREE.Line(geometry2, material));
+      
+      		renderer = new THREE.WebGLRenderer();
+      		renderer.setSize(window.innerWidth, window.innerHeight);
+      		renderer.setClearColor(0x888888);
+      
+      		document.body.appendChild(renderer.domElement);
+      		window.addEventListener('resize', onWindowResize, false);
+      		window.addEventListener('mousedown', onDocumentMouseDown, false);
+      }
+      
+      function onWindowResize() {
+      		camera.aspect = window.innerWidth / window.innerHeight;
+      		camera.updateProjectionMatrix();
+      		renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      
+      function onDocumentMouseDown(event) {
+      		event.preventDefault();
+      		// Normalized Device Coordinate (NDC)
+      		// NDC: [-1,1]x[-1,1]
+      		mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      		mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      
+      		if (pts.length == 4) return;
+      
+      		if (event.button === 0) { // left button
+      				var pt = new THREE.Vector3(mouse.x * 50, mouse.y * 50, 0);
+      				var mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 10),
+      					new THREE.MeshBasicMaterial({
+      						color: 0x000000
+      				}));
+      				mesh.position.set(pt.x, pt.y, 0);
+      				scene.add(mesh);
+      				pts.push(pt);
+      				cleanGroup.push(mesh);
+      		}
+      
+      		if (pts.length == 4) {
+      				curve = FourPointForm(pts[0], pts[1], pts[2], pts[3]);
+      				scene.add(curve);
+      		}
+      }
+      
+      function FourPointForm(q0, q1, q2, q3, isRotate) {
+      		var curveGroup = new THREE.Object3D();
+      		// p1 = q0, t1 = q1-q0, p2 = q3, t2 = q3-q2
+      		curveGroup.add(drawHermiteCurve(q0, q1.clone().sub(q0), q3, q3.clone().sub(q2)));
+      
+      		// add four points
+      		var point, tangent;
+      		point = new THREE.Mesh(new THREE.CircleGeometry(1, 12), new THREE.MeshBasicMaterial());
+      		point.position.copy(q0);
+      		curveGroup.add(point);
+      		tangent = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial());
+      		tangent.position.copy(q1);
+      		curveGroup.add(tangent);
+      
+      		point = new THREE.Mesh(new THREE.CircleGeometry(1, 12), new THREE.MeshBasicMaterial({
+      				color: 0xff1234
+      		}));
+      		point.position.copy(q3);
+      		curveGroup.add(point);
+      		tangent = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({
+      				color: 0xff1234
+      		}));
+      		tangent.position.copy(q2);
+      		curveGroup.add(tangent);
+      
+      		return curveGroup;
+      }
+      
+      // reference:
+      // http://cubic.org/docs/hermite.htm
+      
+      // return a mesh of a Hermite curve
+      function drawHermiteCurve(p1, t1, p2, t2) {
+      		var s, s2, s3, h1, h2, h3, h4;
+      		var pt = new THREE.Vector3();
+      		var material = new THREE.LineBasicMaterial({
+      				color: 0xffff00 // yellow
+      		});
+      
+      		var geometry = new THREE.Geometry();
+      
+      		for (s = 0; s <= 1; s += 0.1) {
+      				s2 = s * s;
+      				s3 = s2 * s;
+      				h1 = 2 * s3 - 3 * s2 + 1;
+      				h2 = -2 * s3 + 3 * s2;
+      				h3 = s3 - 2 * s2 + s;
+      				h4 = s3 - s2;
+      
+      				pt.set(0, 0, 0);
+      				pt.add(p1.clone().multiplyScalar(h1));
+      				pt.add(p2.clone().multiplyScalar(h2));
+      				pt.add(t1.clone().multiplyScalar(h3));
+      				pt.add(t2.clone().multiplyScalar(h4));
+      				// pt.addScaledVector(p1, h1);  // no longer supported
+      
+      				geometry.vertices.push(pt.clone());
+      		}
+      
+      		return new THREE.Line(geometry, material);
+      }
+      
+      function eval(coefs, x) {
+      
+      		var a = coefs[0];
+      		var b = coefs[1];
+      		var c = coefs[2];
+      		var d = coefs[3];
+      		var e = coefs[4];
+      		var f = coefs[5];
+      		var g = coefs[6];
+      
+      	// f(x)  =  ax^6 +  bx^5 +  cx^4 +  dx^3 +  ex^2 + fx + g
+      		var fx = (((((a * x + b) * x + c) * x + d) * x + e) * x + f) * x + g;
+      
+      		// f'(x) = 6ax^5 + 5bx^4 + 4cx^3 + 3dx^2 + 2ex^1 + f
+      		var dfx = ((((6 * a * x + 5 * b) * x + 4 * c) * x + 3 * d) * x + 2 * e) * x + f;
+      
+      		return [fx, dfx];
+      }
+      
+      function bisection(func, eps, xLo, xHi) {
+      
+      		function fx(x) { return func(x)[0] };
+      
+      		var fLo = fx(xLo);
+      		var fHi = fx(xHi);
+      
+      		if (fLo * fHi > 0) return undefined;
+      
+      		var count = 0;
+      		var xMid, fMid;
+      
+      		for (var i = 0; i < maxIter && xHi - xLo > eps; i++) {
+      
+      				count++;
+      
+      				xMid = (xLo + xHi) / 2;
+      				fMid = fx(xMid);
+      
+      				if (Math.abs(fMid) < eps)
+      						return [xMid, count];
+      				else if (fMid * fLo < 0) {
+      						xHi = xMid;
+      						fHi = fMid;
+      				}
+      				else {
+      						xLo = xMid;
+      						fLo = fMid;
+      				}
+      		}
+      
+      		return [(xLo + xHi) / 2, count];
+      }
+      
+      function newton(func, eps, x0) {
+      
+      		var x1;
+      		var count = 0;
+      
+      		for (var i = 0; i < maxIter; i++, count++) {
+      
+      				var fdf = func(x0);
+      				x1 = x0 - fdf[0] / fdf[1];
+      
+      				if (Math.abs(x1 - x0) < eps) break;
+      
+      				x0 = x1;
+      		}
+      
+      		return [x1, count];
+      }
+      
+      function hcSolver(q0x, q0y, q1x, q1y, q2x, q2y, q3x, q3y, r, s) {
+      
+      		var s0, s1, s2, s3, s4, s5, s6;
+      
+      		var r2 = r * r;
+      
+      		// p1x
+      		var p1x  = q0x;
+      		var p1x2 = p1x * p1x;
+      		// p1y
+      		var p1y  = q0y;
+      		var p1y2 = p1y * p1y;
+      
+      		// p2x
+      		var p2x  = q3x;
+      		var p2x2 = p2x * p2x;
+      		// p2y
+      		var p2y  = q3y;
+      		var p2y2 = p2y * p2y;
+      
+      		// t1x
+      		var t1x  = q1x - q0x;
+      		var t1x2 = t1x * t1x;
+      		// t1y
+      		var t1y  = q1y - q0y;
+      		var t1y2 = t1y * t1y;
+      
+      		// t2x
+      		var t2x  = q3x - q2x;
+      		var t2x2 = t2x * t2x;
+      		// t2y
+      		var t2y  = q3y - q2y;
+      		var t2y2 = t2y * t2y;
+      
+      		s6 = (4 * p1x2 + 4 * p1y2 - 8 * p1x * p2x + 4 * p2x2 - 8 * p1y * p2y + 4 * p2y2 + 4 * p1x * t1x - 4 * p2x * t1x + t1x2 + 4 * p1y * t1y - 4 * p2y * t1y + t1y2 + 4 * p1x * t2x - 4 * p2x * t2x + 2 * t1x * t2x + t2x2 + 4 * p1y * t2y - 4 * p2y * t2y + 2 * t1y * t2y + t2y2);
+      
+      		s5 = ((- 12 * p1x2) - 12 * p1y2 + 24 * p1x * p2x - 12 * p2x2 + 24 * p1y * p2y - 12 * p2y2 - 14 * p1x * t1x + 14 * p2x * t1x - 4 * t1x2 - 14 * p1y * t1y + 14 * p2y * t1y - 4 * t1y2 - 10 * p1x * t2x + 10 * p2x * t2x - 6 * t1x * t2x - 2 * t2x2 - 10 * p1y * t2y + 10 * p2y * t2y - 6 * t1y * t2y - 2 * t2y2);
+      
+      		s4 = (9 * p1x2 + 9 * p1y2 - 18 * p1x * p2x + 9 * p2x2 - 18 * p1y * p2y + 9 * p2y2 + 16 * p1x * t1x - 16 * p2x * t1x + 6 * t1x2 + 16 * p1y * t1y - 16 * p2y * t1y + 6 * t1y2 + 6 * p1x * t2x - 6 * p2x * t2x + 6 * t1x * t2x + t2x2 + 6 * p1y * t2y - 6 * p2y * t2y + 6 * t1y * t2y + t2y2);
+      
+      		s3 = (4 * p1x2 + 4 * p1y2 - 4 * p1x * p2x - 4 * p1y * p2y - 4 * p1x * t1x + 6 * p2x * t1x - 4 * t1x2 - 4 * p1y * t1y + 6 * p2y * t1y - 4 * t1y2 + 2 * p1x * t2x - 2 * t1x * t2x + 2 * p1y * t2y - 2 * t1y * t2y) ;
+      
+      		s2 = ((- 6 * p1x2) - 6 * p1y2 + 6 * p1x * p2x + 6 * p1y * p2y - 4 * p1x * t1x + t1x2 - 4 * p1y * t1y + t1y2 - 2 * p1x * t2x - 2 * p1y * t2y) ;
+      
+      		s1 = (2 * p1x * t1x + 2 * p1y * t1y);
+      
+      		s0 = (- r2 + p1y2 + p1x2);
+      
+      		return eval([s6, s5, s4, s3, s2, s1, s0], s);
+      }
+      function hcTester(option) {
+      
+      		useMode = option;
+      
+      		function func(x) {
+      				return hcSolver(
+      						pts[0].x, pts[0].y,
+      						pts[1].x, pts[1].y,
+      						pts[2].x, pts[2].y,
+      						pts[3].x, pts[3].y,
+      						r, x
+      				);
+      		}
+      
+      		var oTime = performance.now();
+      		var ans = (option == 0) ? bisection(func, eps, 0, 1) : newton(func, eps, 0.5);
+      		var nTime = performance.now();
+      
+      		document.getElementById('rlt').innerHTML = '#Timer: ' + (nTime - oTime).toFixed(3) + 'ms';
+      
+      		if (ans === undefined) return;
+      
+      		var count = ans[1];
+      
+      		var str = 'Newton';
+      		if (option == 0) str = 'Bisection';
+      		str += '(' + count + ' iters)';
+      
+      		var container = document.getElementById(option == 0 ? 'b' : 'n');
+      		container.innerHTML = str;
+      
+      		var s = ans[0];
+      		var s2 = s * s;
+      		var s3 = s2 * s;
+      
+      		var h1 = 2 * s3 - 3 * s2 + 1;
+      		var h2 = -2 * s3 + 3 * s2;
+      		var h3 = s3 - 2 * s2 + s;
+      		var h4 = s3 - s2;
+      
+      		var p1 = pts[0];
+      		var p2 = pts[3];
+      		var t1 = pts[1].clone().sub(pts[0]);
+      		var t2 = pts[3].clone().sub(pts[2]);
+      
+      	var pt = new THREE.Vector3();
+      		pt.set(0, 0, 0);
+      		pt.add(p1.clone().multiplyScalar(h1));
+      		pt.add(p2.clone().multiplyScalar(h2));
+      		pt.add(t1.clone().multiplyScalar(h3));
+      		pt.add(t2.clone().multiplyScalar(h4));
+      
+      		var mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 10),
+      			new THREE.MeshBasicMaterial({
+      				color: (option == 0) ? 0xffff00 : 0x00ff00
+      		}));
+      		mesh.position.set(pt.x, pt.y, 0);
+      		scene.add(mesh);
+      		cleanGroup.push(mesh);
+      }
+      
+      function toggle() {
+      		isAnimated = !isAnimated;
+      }
+      
+      function clean() {
+      	while (cleanGroup.length > 0)
+      			scene.remove(cleanGroup.pop());
+      }
+      
+      function animate() {
+      
+      		if (pts.length == 4 && isAnimated) {
+      
+      				this.dir = this.dir || 1;
+      				r += dir * 0.2;
+      				if (r > rHi) dir = -1;
+      				if (r < rLo) dir = 1;
+      
+      				clean();
+      
+      				var material = new THREE.LineBasicMaterial({
+      						color: 0xffff00 // yellow
+      				});
+      				var geometry = new THREE.Geometry();
+      				var pt = new THREE.Vector3();
+      				for (var i = 0; i <= 360; i++) {
+      						var x = r * Math.cos(i / 180 * Math.PI);
+      						var y = r * Math.sin(i / 180 * Math.PI);
+      						pt.set(x, y, 0);
+      						geometry.vertices.push(pt.clone());
+      				}
+      				var circle = new THREE.Line(geometry, material);
+      				scene.add(circle);
+      				cleanGroup.push(circle);
+      
+      				for (var i = 0; i < 4; i++)
+      						pts[i].applyAxisAngle (new THREE.Vector3(0,0,1), 0.05);
+      				scene.remove (curve)
+      				curve = FourPointForm(pts[0], pts[1], pts[2], pts[3], true);
+      				scene.add(curve);
+      
+      				hcTester(useMode);
+      		}
+      
+      		requestAnimationFrame(animate);
+      		render();
+      }
+      
+      function render() {
+      		renderer.render(scene, camera);
+      }
+    </script>
+  </body>
+</html>
