@@ -1,0 +1,268 @@
+!!! 5
+%html
+	%head
+		%meta(charset='utf-8')
+		%title='Numerical Analysis Homework4'
+		%script(src='../res/libraries/three.r70.min.js')
+		:css
+			#info {
+				position: absolute;
+				top: 0px;
+				width: 100%;
+				padding: 10px;
+				text-align: center;
+				color: #ffff00
+			}
+			#m1, #m2, #m3 {
+				position: absolute;
+				left: 10%;
+			}
+			#m1 { top: 35%; }
+			#m2 { top: 50%; }
+			#m3 { top: 65%; }
+			body {
+				margin: 0;
+				overflow: hidden;
+			}
+	%body
+		#info
+			NA_HW4
+			%br
+			%a(href='javascript:reset();')='reset'
+			%br
+			T*=
+			%span#t0
+			(s)
+		#m1
+			Euler T=
+			%span#t1='0'
+			( err =
+			%span#e1='0'
+			)
+		#m2
+			MidPoint T=
+			%span#t2='0'
+			( err =
+			%span#e2='0'
+			)
+		#m3
+			RK4 T=
+			%span#t3='0'
+			( err =
+			%span#e3='0'
+			)
+		:javascript
+			var camera, scene, renderer;
+			var mesh1, mesh2, mesh3, border;
+			var clock = new THREE.Clock();
+
+			var digit = 4;
+			var m = 1, k = 5, c = .51;
+			var x1, x2, x3;
+			var pos = 15;
+			var size = 50;
+			var F = [0, 0, 0];
+			var Fn = 2;
+			var isMouseDown = false;
+			var mouseX, mouseY;
+			var line1, line2, line3;
+			var clock1, clock2, clock3;
+			var T;
+
+			var isStable = [true, true, true];
+
+			function reset() {
+				x1 = [20, 0];
+				x2 = [20, 0];
+				x3 = [20, 0];
+			}
+
+			function deriv(x, n) {
+				var _x = x[0];
+				var _v = x[1];
+				return [
+					/* x_dot */ _v,
+					/* v_dot */ (c * _v + k * _x - (isMouseDown ? F[n] * Fn : 0)) / -m
+				];
+			}
+
+			function ODESolver(dt) {
+
+				// Euler
+				var f1 = deriv(x1, 0);
+				for (var i = 0; i < x1.length; i++) x1[i] += f1[i] * dt;
+
+				// MidPoint
+				var f2 = deriv(x2, 1);
+				var x2_mid = x2.slice(0);
+				for (var i = 0; i < x2.length; i++) x2_mid[i] += f2[i] * (dt / 2);
+				var f2_mid = deriv(x2_mid, 1);
+				for (var i = 0; i < x2.length; i++) x2[i] += f2_mid[i] * dt;
+
+				// RK4
+				var x3_k1 = x3.slice(0);
+				var f3_k1 = deriv(x3_k1, 2);
+				var x3_k2 = x3.slice(0);
+				for (var i = 0; i < x3.length; i++) x3_k2[i] += f3_k1[i] * (dt / 2);
+				var f3_k2 = deriv(x3_k2, 2);
+				var x3_k3 = x3.slice(0);
+				for (var i = 0; i < x3.length; i++) x3_k3[i] += f3_k2[i] * (dt / 2);
+				var f3_k3 = deriv(x3_k3, 2);
+				var x3_k4 = x3.slice(0);
+				for (var i = 0; i < x3.length; i++) x3_k4[i] += f3_k3[i] * dt;
+				var f3_k4 = deriv(x3_k4, 2);
+				for (var i = 0; i < x3.length; i++)
+					x3[i] += (f3_k1[i] + 2 * f3_k2[i] + 2 * f3_k3[i] + f3_k4[i]) / 6 * dt;
+			}
+
+			init();
+			animate();
+
+			function init() {
+				scene = new THREE.Scene();
+
+				camera = new THREE.OrthographicCamera(-size, size, size, -size, -10, 10);
+				camera.position.z = 10;
+				scene.add(camera);
+
+				mesh1 = new THREE.Mesh(new THREE.CircleGeometry(1, 10), new THREE.MeshBasicMaterial())
+				mesh1.position.set(0, pos, 0);
+				scene.add(mesh1);
+
+				mesh2 = new THREE.Mesh(new THREE.CircleGeometry(1, 10), new THREE.MeshBasicMaterial());
+				mesh2.position.set(0, 0, 0);
+				scene.add(mesh2);
+
+				mesh3 = new THREE.Mesh(new THREE.CircleGeometry(1, 10), new THREE.MeshBasicMaterial());
+				mesh3.position.set(0, -pos, 0);
+				scene.add(mesh3);
+
+				var material = new THREE.LineBasicMaterial({
+					color: 0x0000ff
+				});
+
+				var geometry = new THREE.Geometry();
+				geometry.vertices.push(
+					new THREE.Vector3(-40, -0, 0),
+					new THREE.Vector3(40, 0, 0));
+
+				var border1 = new THREE.Line(geometry, material);
+				border1.position.set(0, pos, 0);
+				scene.add(border1);
+
+				var border2 = new THREE.Line(geometry, material);
+				border2.position.set(0, 0, 0);
+				scene.add(border2);
+
+				var border3 = new THREE.Line(geometry, material);
+				border3.position.set(0, -pos, 0);
+				scene.add(border3);
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.setClearColor(0x888888);
+
+				document.body.appendChild(renderer.domElement);
+				window.addEventListener('resize', onWindowResize, false);
+
+				window.addEventListener('mousemove', onWindowMouseMove, false);
+				window.addEventListener('mousedown', onWindowMouseDown, false);
+				window.addEventListener('mouseup',   onWindowMouseUp, false);
+
+				// INITIIALIZE ODE
+				reset();
+				T = 2 * Math.PI * Math.sqrt(m / k);
+				document.getElementById('t0').innerHTML = T.toFixed(digit);
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function onWindowMouseMove(theEvent) {
+				mouseX = size * ((theEvent.clientX / window.innerWidth) * 2 - 1);
+				mouseY = size * (-(theEvent.clientY / window.innerHeight) * 2 + 1);
+			}
+
+			function onWindowMouseDown() {
+				isMouseDown = true;
+			}
+
+			function onWindowMouseUp() {
+				isMouseDown = false;
+			}
+			function animate() {
+				var dt = clock.getDelta();
+				ODESolver(dt);
+
+				var xm1 = mesh1.position.x;
+				if (xm1 * x1[0] < 0) {
+					clock1 = clock1 || new THREE.Clock();
+					var d1 = clock1.getDelta() * 2;
+					var e1 = Math.abs(T - d1);
+					document.getElementById('t1').innerHTML = d1.toFixed(digit);
+					document.getElementById('e1').innerHTML = e1.toFixed(digit);
+				}
+				mesh1.position.setX (x1[0]);
+
+				var xm2 = mesh2.position.x;
+				if (xm2 * x2[0] < 0) {
+					clock2 = clock2 || new THREE.Clock();
+					var d2 = clock2.getDelta() * 2;
+					var e2 = Math.abs(T - d2);
+					document.getElementById('t2').innerHTML = d2.toFixed(digit);
+					document.getElementById('e2').innerHTML = e2.toFixed(digit);
+				}
+				mesh2.position.setX (x2[0]);
+
+				var xm3 = mesh3.position.x;
+				if (xm3 * x3[0] < 0) {
+					clock3 = clock3 || new THREE.Clock();
+					var d3 = clock3.getDelta() * 2;
+					var e3 = Math.abs(T - d3);
+					document.getElementById('t3').innerHTML = d3.toFixed(digit);
+					document.getElementById('e3').innerHTML = e3.toFixed(digit);
+				}
+				mesh3.position.setX (x3[0]);
+
+				F[0] = mouseX - x1[0];
+				F[1] = mouseX - x2[0];
+				F[2] = mouseX - x3[0];
+
+				if (line1) { scene.remove(line1); line1 = null; }
+				if (line2) { scene.remove(line2); line2 = null; }
+				if (line3) { scene.remove(line3); line3 = null; }
+				if (isMouseDown) {
+					var material = new THREE.LineBasicMaterial();
+
+					var geometry1 = new THREE.Geometry();
+					geometry1.vertices.push(
+						new THREE.Vector3(mouseX, mouseY, 0),
+						new THREE.Vector3(x1[0], pos, 0));
+					line1 = new THREE.Line(geometry1, material);
+					scene.add(line1);
+
+					var geometry2 = new THREE.Geometry();
+					geometry2.vertices.push(
+						new THREE.Vector3(mouseX, mouseY, 0),
+						new THREE.Vector3(x2[0], 0, 0));
+					line2 = new THREE.Line(geometry2, material);
+					scene.add(line2);
+
+					var geometry3 = new THREE.Geometry();
+					geometry1.vertices.push(
+						new THREE.Vector3(mouseX, mouseY, 0),
+						new THREE.Vector3(x3[0], -pos, 0));
+					line3 = new THREE.Line(geometry3, material);
+					scene.add(line3);
+				}
+
+				requestAnimationFrame(animate);
+				render();
+			}
+
+			function render() {
+				renderer.render(scene, camera);
+			}
