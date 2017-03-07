@@ -1,0 +1,166 @@
+!!! 5
+%html
+	%head
+		%meta(charset='utf-8')
+		%title='Numerical Analysis Homework2p'
+		%script(src='../res/libraries/three.r70.min.js')
+		:css
+			#info {
+				position: absolute;
+				top: 0px;
+				width: 100%;
+				padding: 10px;
+				text-align: center;
+				color: #00ff00
+			}
+			body {
+				overflow: hidden;
+			}
+		:javascript
+			document.oncontextmenu = function() {
+				return false;
+			}
+	%body
+		#info='NA_HW2p'
+		:javascript
+			var camera, scene, renderer;
+			var mouse = new THREE.Vector2();
+			var cameraLeft = -50,
+					cameraRight = 50,
+					cameraTop = 50,
+					cameraBottom = -50,
+					cameraNear = -10,
+					cameraFar = 10;
+
+			var leftPt, rightPt; // empty array
+			var ln = [];
+
+			init();
+			animate();
+
+			function init() {
+					scene = new THREE.Scene();
+
+					camera = new THREE.OrthographicCamera(cameraLeft, cameraRight, cameraTop, cameraBottom, cameraNear, cameraFar);
+					camera.position.z = 10;
+					scene.add(camera);
+
+					// draw border
+					var material = new THREE.LineBasicMaterial({
+							color: 0x0000ff
+					});
+
+					var geometry = new THREE.Geometry();
+					geometry.vertices.push(
+					new THREE.Vector3(-40, -40, 0),
+					new THREE.Vector3(40, -40, 0),
+					new THREE.Vector3(40, 40, 0),
+					new THREE.Vector3(-40, 40, 0),
+					new THREE.Vector3(-40, -40, 0));
+
+					var border = new THREE.Line(geometry, material);
+					scene.add(border);
+
+					renderer = new THREE.WebGLRenderer();
+					renderer.setSize(window.innerWidth, window.innerHeight);
+					renderer.setClearColor(0xffffff);
+
+					document.body.appendChild(renderer.domElement);
+					window.addEventListener('resize', onWindowResize, false);
+					window.addEventListener('mousedown', onDocumentMouseDown, false);
+			}
+
+			function onWindowResize() {
+					camera.aspect = window.innerWidth / window.innerHeight;
+					camera.updateProjectionMatrix();
+					renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function onDocumentMouseDown(event) {
+					event.preventDefault();
+					// Normalized Device Coordinate (NDC)
+					// NDC: [-1,1]x[-1,1]
+					mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+					mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+					console.log(mouse.x + ', ' + mouse.y);
+
+					if (event.button === 0) { // left button
+							leftPt = new THREE.Vector2(mouse.x * 50, mouse.y * 50);
+							var mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 10),
+							new THREE.MeshBasicMaterial({
+									color: 0x888888
+							}));
+							mesh.position.set(leftPt.x, leftPt.y, 0);
+							scene.add(mesh);
+					} else if (event.button === 2) { // right button
+							rightPt = new THREE.Vector2(mouse.x * 50, mouse.y * 50);
+							var mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 10),
+							new THREE.MeshBasicMaterial({
+									color: 0xff0000
+							}));
+							mesh.position.set(rightPt.x, rightPt.y, 0);
+							scene.add(mesh);
+					}
+
+					// add line if both points are clicked
+					if (leftPt !== undefined && rightPt !== undefined) {
+							var material = new THREE.LineBasicMaterial({
+									color: 0x000000
+							});
+
+							var geometry = new THREE.Geometry();
+							geometry.vertices.push(
+							new THREE.Vector3(leftPt.x, leftPt.y, 0),
+							new THREE.Vector3(rightPt.x, rightPt.y, 0));
+
+							console.log('add line ...');
+							var line = new THREE.Line(geometry, material);
+							scene.add(line);
+
+							ln.push(
+									solve_1A(leftPt.x, leftPt.y,
+													rightPt.x, rightPt.y)
+							);
+
+							// reset both points
+							leftPt = undefined;
+							rightPt = undefined;
+
+							if (ln.length == 2) solve();
+					}
+			}
+
+			function animate() {
+					requestAnimationFrame(animate);
+					render();
+			}
+
+			function render() {
+					renderer.render(scene, camera);
+			}
+
+			function solve_1A(p1, q1, p2, q2) {
+				var a = q2 - q1;
+					var b = p1 - p2;
+					var c = p2 * q1 - p1 * q2;
+					return [a, b, c];
+			}
+			function solve_1B(a1, b1, c1, a2, b2, c2) {
+					var d = a2 * b1 - a1 * b2;
+					var x = (b2 * c1 - b1 * c2) / d;
+					var y = -1 * (a2 * c1 - a1 * c2) / d;
+					return [x, y];
+			}
+			function solve() {
+					var ln1 = ln.pop();
+					var ln2 = ln.pop();
+					var point = solve_1B(ln1[0], ln1[1], ln1[2],
+															ln2[0], ln2[1], ln2[2]);
+					var mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 10),
+					new THREE.MeshBasicMaterial({
+							color: 0x0000ff
+					}));
+					mesh.position.set(point[0], point[1], 0);
+					scene.add(mesh);
+			}
